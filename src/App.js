@@ -1,13 +1,13 @@
 import React from 'react';
-import Header from './Header';
-import Dashboard from './Dashboard';  // ← эта строка должна быть
+import Header from './components/Header';
+import Dashboard from './components/Dashboard';
 import './App.css';
 
 function App() {
   return (
     <div className="App">
       <Header />
-      <Dashboard />  {/* ← и эта */}
+      <Dashboard />
     </div>
   );
 }
