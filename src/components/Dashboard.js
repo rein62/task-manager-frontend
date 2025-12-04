@@ -1155,8 +1155,8 @@ const TaskCompleteModal = ({ task, onClose, onComplete }) => {
   );
 };
 
-// Компонент профиля исполнителя
-const ExecutorProfileModal = ({ executor, onClose }) => {
+// Компонент профиля исполнителя (ОБНОВЛЕНО: добавлена кнопка "Карточка" задачи)
+const ExecutorProfileModal = ({ executor, onClose, onOpenTaskCard, getTaskById }) => {
   if (!executor) return null;
 
   const calculateAverageRating = (history) => {
@@ -1278,31 +1278,58 @@ const ExecutorProfileModal = ({ executor, onClose }) => {
           </h4>
           {executor.taskHistory && executor.taskHistory.length > 0 ? (
             <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-              {executor.taskHistory.map((task, index) => (
-                <div key={index} style={{
-                  padding: '12px',
-                  borderBottom: '1px solid #f0f0f0',
-                  background: index % 2 === 0 ? '#fafafa' : 'white'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <strong style={{ color: '#333' }}>{task.title}</strong>
-                    <span style={{ color: '#666', fontSize: '12px' }}>{task.date}</span>
-                  </div>
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: '15px',
-                    fontSize: '13px',
-                    color: '#666'
+              {executor.taskHistory.map((task, index) => {
+                const fullTask = getTaskById(task.taskId);
+                return (
+                  <div key={index} style={{
+                    padding: '12px',
+                    borderBottom: '1px solid #f0f0f0',
+                    background: index % 2 === 0 ? '#fafafa' : 'white',
+                    position: 'relative'
                   }}>
-                    <span>Сроки: <strong>{task.deadlineMet}/5</strong></span>
-                    <span>Результат: <strong>{task.effectiveness}/5</strong></span>
-                    <span>Качество: <strong>{task.quality}/5</strong></span>
-                    <span style={{ marginLeft: 'auto' }}>
-                      Итог: <strong>{task.deadlineMet + task.effectiveness + task.quality}/15</strong>
-                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ color: '#333' }}>{task.title}</strong>
+                        {fullTask && (
+                          <button 
+                            onClick={() => onOpenTaskCard(fullTask)}
+                            style={{
+                              position: 'absolute',
+                              right: '10px',
+                              top: '10px',
+                              padding: '3px 8px',
+                              background: '#f0f0f0',
+                              color: '#333',
+                              border: '1px solid #ddd',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              zIndex: 1
+                            }}
+                          >
+                            Карточка
+                          </button>
+                        )}
+                      </div>
+                      <span style={{ color: '#666', fontSize: '12px', marginLeft: '10px' }}>{task.date}</span>
+                    </div>
+                    <div style={{ 
+                      display: 'flex', 
+                      gap: '15px',
+                      fontSize: '13px',
+                      color: '#666'
+                    }}>
+                      <span>Сроки: <strong>{task.deadlineMet}/5</strong></span>
+                      <span>Результат: <strong>{task.effectiveness}/5</strong></span>
+                      <span>Качество: <strong>{task.quality}/5</strong></span>
+                      <span style={{ marginLeft: 'auto' }}>
+                        Итог: <strong>{task.deadlineMet + task.effectiveness + task.quality}/15</strong>
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p style={{ color: '#999', textAlign: 'center', padding: '20px' }}>
@@ -2328,6 +2355,17 @@ function Dashboard() {
     saveToLocalStorage('users', correctedUsers);
   }, [users]);
 
+  // Функция для поиска задачи по ID
+  const getTaskById = (taskId) => {
+    return tasks.find(task => task.id === taskId);
+  };
+
+  // Функция для открытия карточки задачи
+  const openTaskCard = (task) => {
+    setSelectedTask(task);
+    setShowTaskCard(true);
+  };
+
   // Функции авторизации
   const handleLogin = (e) => {
     e.preventDefault();
@@ -2493,7 +2531,7 @@ function Dashboard() {
     logAction('Изменена роль пользователя', `Пользователю ${userToChange.name} назначена роль: ${newRole}`);
   };
 
-  // Функции управления задачами
+  // Функции управления задачами - ОБНОВЛЕНА: удаляет задачу из истории исполнителя при смене статуса с "завершена"
   const handleStatusChange = (taskId, newStatus) => {
     if (!currentUser) {
       addNotification('Ошибка', 'Пользователь не авторизован', 'error', []);
@@ -2514,24 +2552,60 @@ function Dashboard() {
       return;
     }
 
+    const oldStatus = task.status;
+    const oldDeadlineMet = task.deadlineMet;
+    const oldEffectiveness = task.effectiveness;
+    const oldQuality = task.quality;
+    
     setTasks(prevTasks => {
-      const updatedTasks = prevTasks.map(task => 
-        task.id === taskId ? { ...task, status: newStatus } : task
+      const updatedTasks = prevTasks.map(t => 
+        t.id === taskId ? { ...t, status: newStatus } : t
       );
       
-      const updatedTask = updatedTasks.find(task => task.id === taskId);
+      const updatedTask = updatedTasks.find(t => t.id === taskId);
       
       if (updatedTask) {
-        setExecutors(prevExecutors => 
-          prevExecutors.map(executor => 
-            executor.id === updatedTask.executorId 
-              ? { 
-                  ...executor, 
+        // Если статус меняется с "completed" на другой, удаляем задачу из истории исполнителя
+        if (oldStatus === 'completed' && newStatus !== 'completed' && 
+            (oldDeadlineMet > 0 || oldEffectiveness > 0 || oldQuality > 0)) {
+          
+          setExecutors(prevExecutors => 
+            prevExecutors.map(executor => {
+              if (executor.id === updatedTask.executorId) {
+                // Удаляем задачу из истории
+                const newTaskHistory = executor.taskHistory?.filter(h => h.taskId !== taskId) || [];
+                
+                return {
+                  ...executor,
+                  taskHistory: newTaskHistory,
+                  // Уменьшаем счетчик выполненных задач, если задача была в истории
+                  completedTasks: executor.taskHistory?.some(h => h.taskId === taskId) 
+                    ? Math.max(0, executor.completedTasks - 1) 
+                    : executor.completedTasks,
                   status: newStatus === 'in-progress' ? 'busy' : 'free'
-                } 
-              : executor
-          )
-        );
+                };
+              }
+              return executor;
+            })
+          );
+          
+          // Обнуляем оценку задачи
+          updatedTask.deadlineMet = 0;
+          updatedTask.effectiveness = 0;
+          updatedTask.quality = 0;
+        } else {
+          // Обычное изменение статуса
+          setExecutors(prevExecutors => 
+            prevExecutors.map(executor => 
+              executor.id === updatedTask.executorId 
+                ? { 
+                    ...executor, 
+                    status: newStatus === 'in-progress' ? 'busy' : 'free'
+                  } 
+                : executor
+            )
+          );
+        }
 
         const recipientIds = [];
         if (updatedTask.executorId) recipientIds.push(updatedTask.executorId);
@@ -3057,6 +3131,8 @@ function Dashboard() {
             setShowExecutorProfile(false);
             setSelectedExecutor(null);
           }}
+          onOpenTaskCard={openTaskCard}
+          getTaskById={getTaskById}
         />
       )}
 
